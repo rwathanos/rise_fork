@@ -18,6 +18,8 @@ export function usePoolState(pool?: `0x${string}`) {
           { address: pool, abi: risePoolAbi, functionName: "metadataURI" },
           { address: pool, abi: risePoolAbi, functionName: "token" },
           { address: pool, abi: risePoolAbi, functionName: "pendingCreatorFeesWad" },
+          { address: pool, abi: risePoolAbi, functionName: "realReserveWad" },
+          { address: pool, abi: risePoolAbi, functionName: "totalBorrowedReserveWad" },
         ]
       : [],
     query: { enabled: Boolean(pool) },
@@ -40,5 +42,7 @@ export function usePoolState(pool?: `0x${string}`) {
     metadataURI: data[7]?.result as string | undefined,
     token: data[8]?.result as `0x${string}` | undefined,
     pendingCreatorFeesWad: data[9]?.result as bigint | undefined,
+    realReserveWad: data[10]?.result as bigint | undefined,
+    totalBorrowedReserveWad: data[11]?.result as bigint | undefined,
   };
 }

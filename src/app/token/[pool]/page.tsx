@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 
@@ -21,6 +22,10 @@ export default function TokenPage() {
   const { tokens } = useTokenRegistry();
   const tokenEntry = tokens.find((item) => item.pool.toLowerCase() === pool.toLowerCase());
   const state = usePoolState(pool);
+
+  const refreshPoolData = useCallback(() => {
+    void state.refetch();
+  }, [state.refetch]);
 
   const backingAsset = state.isNativeBacking ? undefined : usdtAddress(defaultChainId);
   const cover = pickCoverArt(pool);
@@ -59,6 +64,7 @@ export default function TokenPage() {
           backingAsset={backingAsset}
           creatorVariableFeeBps={state.creatorVariableFeeBps ?? 0}
           tokenSymbol={tokenEntry?.symbol}
+          onPoolActivity={refreshPoolData}
         />
         <BorrowPanel
           pool={pool}
@@ -67,6 +73,7 @@ export default function TokenPage() {
           isNativeBacking={Boolean(state.isNativeBacking)}
           backingAsset={backingAsset}
           tokenSymbol={tokenEntry?.symbol}
+          onPoolActivity={refreshPoolData}
         />
       </div>
 

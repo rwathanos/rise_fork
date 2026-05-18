@@ -28,6 +28,7 @@ type Props = {
   backingAsset?: `0x${string}`;
   creatorVariableFeeBps: number;
   tokenSymbol?: string;
+  onPoolActivity?: () => void;
 };
 
 const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
@@ -40,6 +41,7 @@ export function SwapPanel({
   backingAsset,
   creatorVariableFeeBps,
   tokenSymbol,
+  onPoolActivity,
 }: Props) {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -126,7 +128,8 @@ export function SwapPanel({
     void refetchNativeBalance();
     void refetchBackingBalance();
     void refetchTokenBalance();
-  }, [receipt.isSuccess, refetchBackingBalance, refetchNativeBalance, refetchTokenBalance]);
+    onPoolActivity?.();
+  }, [onPoolActivity, receipt.isSuccess, refetchBackingBalance, refetchNativeBalance, refetchTokenBalance]);
 
   const feePreview =
     mode === "buy" && parsedAmount > 0n
