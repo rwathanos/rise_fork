@@ -6,10 +6,13 @@ import { usePublicClient } from "wagmi";
 
 import { factoryDeployBlock } from "@/lib/chains";
 import { factoryAddress } from "@/lib/contracts";
+import { enrichToken } from "@/lib/token-enrichment";
 import {
+  loadFactorySyncBlock,
   loadTokenRegistry,
   resolveFactorySyncFromBlock,
   saveFactorySyncBlock,
+  saveTokenRegistry,
   upsertToken,
   type TokenSummary,
 } from "@/lib/token-registry";
@@ -22,24 +25,43 @@ const tokenCreatedEvent = parseAbiItem(
   "event TokenCreated(address indexed token, address indexed pool, address indexed creator, address backingAsset, uint8 creatorVariableFeeBps, string metadataURI)",
 );
 
-async function enrichToken(entry: TokenSummary) {
-  try {
-    const response = await fetch(entry.metadataURI);
-    if (!response.ok) return;
-    const metadata = (await response.json()) as { name?: string; symbol?: string };
-    entry.name = metadata.name;
-    entry.symbol = metadata.symbol;
-  } catch {
-    // ignore metadata fetch failures
+/** When deploy block is unset, avoid scanning from genesis on first sync. */
+const RECENT_SYNC_WINDOW = 200_000n;
+
+function resolveSyncFromBlock(latestBlock: bigint): bigint {
+  const deployBlock = factoryDeployBlock();
+  const fromBlock = resolveFactorySyncFromBlock(deployBlock);
+  if (deployBlock !== undefined || loadFactorySyncBlock() !== undefined) {
+    return fromBlock;
   }
+  return latestBlock > RECENT_SYNC_WINDOW ? latestBlock - RECENT_SYNC_WINDOW : 0n;
 }
 
 export function useTokenRegistry() {
-  const [tokens, setTokens] = useState<TokenSummary[]>([]);
+  const [tokens, setTokens] = useState<TokenSummary[]>(() => loadTokenRegistry());
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasSyncedOnce, setHasSyncedOnce] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const factory = factoryAddress();
   const publicClient = usePublicClient({ chainId: preferredChain.id });
+
+  const enrichRegistry = useCallback(async () => {
+    if (!publicClient) return loadTokenRegistry();
+
+    const registry = loadTokenRegistry();
+    if (registry.length === 0) return registry;
+
+    let changed = false;
+    for (const entry of registry) {
+      const prevName = entry.name;
+      const prevSymbol = entry.symbol;
+      await enrichToken(publicClient, entry);
+      if (entry.name !== prevName || entry.symbol !== prevSymbol) changed = true;
+    }
+
+    if (changed) saveTokenRegistry(registry);
+    return registry;
+  }, [publicClient]);
 
   const sync = useCallback(async () => {
     if (!factory || !publicClient) return;
@@ -49,57 +71,54 @@ export function useTokenRegistry() {
 
     try {
       const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = resolveFactorySyncFromBlock(factoryDeployBlock());
-      const firstEnd = fromBlock + LOG_CHUNK_SIZE - 1n > latestBlock ? latestBlock : fromBlock + LOG_CHUNK_SIZE - 1n;
+      const fromBlock = resolveSyncFromBlock(latestBlock);
 
-      const logs = await publicClient.getLogs({
-        address: factory,
-        event: tokenCreatedEvent,
-        fromBlock,
-        toBlock: firstEnd,
-      });
-
-      for (let start = firstEnd + 1n; start <= latestBlock; start += LOG_CHUNK_SIZE) {
-        const end = start + LOG_CHUNK_SIZE - 1n > latestBlock ? latestBlock : start + LOG_CHUNK_SIZE - 1n;
-        logs.push(
-          ...(await publicClient.getLogs({
+      if (fromBlock <= latestBlock) {
+        for (let start = fromBlock; start <= latestBlock; start += LOG_CHUNK_SIZE) {
+          const end = start + LOG_CHUNK_SIZE - 1n > latestBlock ? latestBlock : start + LOG_CHUNK_SIZE - 1n;
+          const chunkLogs = await publicClient.getLogs({
             address: factory,
             event: tokenCreatedEvent,
             fromBlock: start,
             toBlock: end,
-          })),
-        );
-      }
+          });
 
-      for (const log of logs) {
-        const entry: TokenSummary = {
-          token: log.args.token!,
-          pool: log.args.pool!,
-          creator: log.args.creator!,
-          backingAsset: log.args.backingAsset!,
-          creatorVariableFeeBps: Number(log.args.creatorVariableFeeBps),
-          metadataURI: log.args.metadataURI!,
-          createdAt: Number(log.blockNumber),
-        };
+          if (chunkLogs.length === 0) continue;
 
-        await enrichToken(entry);
-        upsertToken(entry);
+          for (const log of chunkLogs) {
+            upsertToken({
+              token: log.args.token!,
+              pool: log.args.pool!,
+              creator: log.args.creator!,
+              backingAsset: log.args.backingAsset!,
+              creatorVariableFeeBps: Number(log.args.creatorVariableFeeBps),
+              metadataURI: log.args.metadataURI!,
+              createdAt: Number(log.blockNumber),
+            });
+          }
+
+          setTokens(loadTokenRegistry());
+        }
       }
 
       saveFactorySyncBlock(latestBlock);
-      setTokens(loadTokenRegistry());
+      const registry = await enrichRegistry();
+      setTokens([...registry]);
+      setHasSyncedOnce(true);
     } catch (error) {
       setSyncError(getTxErrorMessage(error));
+      setTokens(loadTokenRegistry());
     } finally {
       setIsSyncing(false);
     }
-  }, [factory, publicClient]);
+  }, [enrichRegistry, factory, publicClient]);
 
   useEffect(() => {
-    Promise.resolve().then(() => {
-      setTokens(loadTokenRegistry());
+    if (!publicClient) return;
+    void enrichRegistry().then((registry) => {
+      if (registry.length > 0) setTokens([...registry]);
     });
-  }, []);
+  }, [enrichRegistry, publicClient]);
 
   useEffect(() => {
     void sync();
@@ -108,6 +127,7 @@ export function useTokenRegistry() {
   return {
     tokens,
     isSyncing,
+    hasSyncedOnce,
     syncError,
     refresh: () => {
       setTokens(loadTokenRegistry());

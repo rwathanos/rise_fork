@@ -9,7 +9,7 @@ import { factoryAddress } from "@/lib/contracts";
 import { useTokenRegistry } from "@/hooks/useTokenRegistry";
 
 export default function HomePage() {
-  const { tokens, isSyncing, syncError, refresh } = useTokenRegistry();
+  const { tokens, isSyncing, hasSyncedOnce, syncError, refresh } = useTokenRegistry();
   const factory = factoryAddress();
 
   return (
@@ -48,11 +48,13 @@ export default function HomePage() {
             </button>
           </div>
         </div>
-        {isSyncing && tokens.length === 0 ? (
-          <EmptyStateCard title="正在同步市场列表" description="正在从 Factory 事件拉取已创建代币，请稍候。" />
+        {isSyncing ? (
+          <p className="mb-4 text-sm text-[#a5bcdb]">
+            {tokens.length > 0 ? "正在后台更新市场列表…" : "正在从链上同步 Factory 事件，请稍候…"}
+          </p>
         ) : null}
         {syncError ? <FeedbackBanner tone="error" message={`同步失败：${syncError}`} className="mb-4" /> : null}
-        {!isSyncing && tokens.length === 0 ? (
+        {!isSyncing && hasSyncedOnce && tokens.length === 0 ? (
           <EmptyStateCard title="还没有代币市场" description="先创建第一个市场，或点击刷新重新同步 Factory 事件。" />
         ) : null}
         {tokens.length > 0 ? (
