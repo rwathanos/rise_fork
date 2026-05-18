@@ -50,7 +50,7 @@ export default function HomePage() {
         </div>
         {isSyncing ? (
           <p className="mb-4 text-sm text-[#a5bcdb]">
-            {tokens.length > 0 ? "正在后台更新市场列表…" : "正在从链上同步 Factory 事件，请稍候…"}
+            {tokens.length > 0 ? "正在后台更新市场列表…" : "正在从 Factory 批量加载市场列表，请稍候…"}
           </p>
         ) : null}
         {syncError ? <FeedbackBanner tone="error" message={`同步失败：${syncError}`} className="mb-4" /> : null}

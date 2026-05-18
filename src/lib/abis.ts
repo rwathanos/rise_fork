@@ -15,6 +15,14 @@ export const riseFactoryAbi = parseAbi([
   "function tokenToPool(address token) view returns (address)",
   "function poolToToken(address pool) view returns (address)",
   "function supportedBackingAsset(address asset) view returns (bool)",
+  "function allPoolsLength() view returns (uint256)",
+  "function allPools(uint256 index) view returns (address)",
+  "function getTokenMarket(address pool) view returns ((address token, address pool, address creator, address backingAsset, uint8 creatorVariableFeeBps, string metadataURI, string name, string symbol))",
+  "function getTokenMarkets(uint256 offset, uint256 limit) view returns ((address token, address pool, address creator, address backingAsset, uint8 creatorVariableFeeBps, string metadataURI, string name, string symbol)[])",
+  "function getTokenMarketsByPools(address[] pools) view returns ((address token, address pool, address creator, address backingAsset, uint8 creatorVariableFeeBps, string metadataURI, string name, string symbol)[])",
+  "function getTokenLabels(uint256 offset, uint256 limit) view returns ((address token, address pool, string name, string symbol)[])",
+  "function getTokenLabelsByPools(address[] pools) view returns ((address token, address pool, string name, string symbol)[])",
+  "function MAX_BATCH_SIZE() view returns (uint256)",
   "event TokenCreated(address indexed token, address indexed pool, address indexed creator, address backingAsset, uint8 creatorVariableFeeBps, string metadataURI)",
 ]);
 
