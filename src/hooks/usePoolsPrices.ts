@@ -1,45 +1,63 @@
 "use client";
 
-import { useMemo } from "react";
-import { useReadContracts } from "wagmi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePublicClient } from "wagmi";
 
 import { risePoolAbi } from "@/lib/abis";
+import { preferredChain } from "@/lib/wagmi";
 
 export type PoolPrices = {
   marketPrice?: bigint;
   floorPrice?: bigint;
 };
 
-/** Batch-read market/floor prices for many pools (2 calls per pool). */
+/** Fetch market/floor prices via public RPC (works without wallet). */
 export function usePoolsPrices(pools: `0x${string}`[]) {
-  const contracts = useMemo(
-    () =>
-      pools.flatMap((pool) => [
-        { address: pool, abi: risePoolAbi, functionName: "getMarketPrice" as const },
-        { address: pool, abi: risePoolAbi, functionName: "getFloorPrice" as const },
-      ]),
-    [pools],
-  );
+  const publicClient = usePublicClient({ chainId: preferredChain.id });
+  const [byPool, setByPool] = useState<Map<string, PoolPrices>>(() => new Map());
+  const [isLoading, setIsLoading] = useState(false);
 
-  const { data, isLoading, refetch } = useReadContracts({
-    contracts,
-    query: {
-      enabled: pools.length > 0,
-      staleTime: 15_000,
-    },
-  });
+  const poolsKey = useMemo(() => pools.map((p) => p.toLowerCase()).join(","), [pools]);
 
-  const byPool = useMemo(() => {
-    const map = new Map<string, PoolPrices>();
-    for (let i = 0; i < pools.length; i++) {
-      const pool = pools[i]!;
-      map.set(pool.toLowerCase(), {
-        marketPrice: data?.[i * 2]?.result as bigint | undefined,
-        floorPrice: data?.[i * 2 + 1]?.result as bigint | undefined,
-      });
+  const fetchPrices = useCallback(async () => {
+    if (!publicClient || pools.length === 0) {
+      setByPool(new Map());
+      return;
     }
-    return map;
-  }, [data, pools]);
 
-  return { byPool, isLoading, refetch };
+    setIsLoading(true);
+    try {
+      const map = new Map<string, PoolPrices>();
+      await Promise.all(
+        pools.map(async (pool) => {
+          try {
+            const [marketPrice, floorPrice] = await Promise.all([
+              publicClient.readContract({
+                address: pool,
+                abi: risePoolAbi,
+                functionName: "getMarketPrice",
+              }),
+              publicClient.readContract({
+                address: pool,
+                abi: risePoolAbi,
+                functionName: "getFloorPrice",
+              }),
+            ]);
+            map.set(pool.toLowerCase(), { marketPrice, floorPrice });
+          } catch {
+            map.set(pool.toLowerCase(), {});
+          }
+        }),
+      );
+      setByPool(map);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [publicClient, pools]);
+
+  useEffect(() => {
+    void fetchPrices();
+  }, [fetchPrices, poolsKey]);
+
+  return { byPool, isLoading, refetch: fetchPrices };
 }

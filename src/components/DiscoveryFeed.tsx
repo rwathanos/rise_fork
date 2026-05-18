@@ -45,9 +45,14 @@ class DiscoveryErrorBoundary extends Component<{ children: ReactNode }, Boundary
 }
 
 function DiscoveryFeedInner() {
-  const { tokens, isSyncing, hasSyncedOnce, syncError, refresh } = useTokenRegistry();
+  const { tokens, isSyncing, hasSyncedOnce, syncError, refresh: refreshRegistry } = useTokenRegistry();
   const pools = useMemo(() => tokens.map((t) => t.pool), [tokens]);
-  const { byPool } = usePoolsPrices(pools);
+  const { byPool, refetch: refetchPrices } = usePoolsPrices(pools);
+
+  const refresh = () => {
+    refreshRegistry();
+    void refetchPrices();
+  };
 
   return (
     <section>

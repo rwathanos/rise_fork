@@ -3,6 +3,7 @@
 import { useReadContracts } from "wagmi";
 
 import { risePoolAbi } from "@/lib/abis";
+import { preferredChain } from "@/lib/wagmi";
 
 type Options = {
   /** When set, pool reads refetch on this interval (ms). */
@@ -13,6 +14,7 @@ export function usePoolState(pool?: `0x${string}`, options?: Options) {
   const pollIntervalMs = options?.pollIntervalMs ?? false;
 
   const { data, refetch, isLoading } = useReadContracts({
+    chainId: preferredChain.id,
     contracts: pool
       ? [
           { address: pool, abi: risePoolAbi, functionName: "getMarketPrice" },
