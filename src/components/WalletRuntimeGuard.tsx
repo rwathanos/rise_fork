@@ -2,7 +2,11 @@
 
 import { useEffect } from "react";
 
-const BENIGN_WALLET_PROVIDER_ERRORS = ["Cannot redefine property: ethereum"];
+const BENIGN_WALLET_PROVIDER_ERRORS = [
+  "Cannot redefine property: ethereum",
+  "Cannot set property ethereum",
+  "ethereum is not defined",
+];
 
 function collectRejectionText(reason: unknown): string {
   if (!reason) return "";
@@ -31,10 +35,12 @@ export function WalletRuntimeGuard({ children }: { children: React.ReactNode }) 
     const onRejection = (event: PromiseRejectionEvent) => {
       if (!isBenignWalletProviderRejection(event.reason)) return;
       event.preventDefault();
+      event.stopImmediatePropagation();
     };
 
-    window.addEventListener("unhandledrejection", onRejection);
-    return () => window.removeEventListener("unhandledrejection", onRejection);
+    // Capture phase runs before Next.js dev overlay logs the rejection.
+    window.addEventListener("unhandledrejection", onRejection, true);
+    return () => window.removeEventListener("unhandledrejection", onRejection, true);
   }, []);
 
   return children;

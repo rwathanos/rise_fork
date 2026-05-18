@@ -66,6 +66,7 @@ export default function TokenPage() {
           backingDecimals={state.backingDecimals ?? 18}
           isNativeBacking={Boolean(state.isNativeBacking)}
           backingAsset={backingAsset}
+          tokenSymbol={tokenEntry?.symbol}
         />
       </div>
 

@@ -37,6 +37,8 @@ export const risePoolAbi = parseAbi([
   "function getFloorPrice() view returns (uint256)",
   "function getMarketPrice() view returns (uint256)",
   "function getReserves() view returns (uint256 reserveTotal, uint256 supplyTotal, uint256 reserveBalance)",
+  "function realReserveWad() view returns (uint256)",
+  "function totalBorrowedReserveWad() view returns (uint256)",
   "function getPosition(address user) view returns (uint256 collateral, uint256 debt)",
   "function maxBorrow(address user) view returns (uint256)",
   "function backingDecimals() view returns (uint8)",

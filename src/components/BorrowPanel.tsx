@@ -1,23 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { parseUnits } from "viem";
+import { useEffect, useMemo, useState } from "react";
+import { formatUnits, parseUnits } from "viem";
 import {
   useAccount,
+  usePublicClient,
   useReadContract,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 
 import { erc20Abi, risePoolAbi } from "@/lib/abis";
+import { ensureErc20Allowance } from "@/lib/ensure-allowance";
+import {
+  computeAvailableBorrowLiquidity,
+  computeMaxBorrowAmount,
+  validateBorrowAmount,
+  validateCollateralBalance,
+} from "@/lib/borrow-limits";
 import { previewOriginationFee } from "@/lib/fees";
-import { formatTokenAmount } from "@/lib/format";
+import { formatAmountInput, formatTokenAmount } from "@/lib/format";
 import { getTxErrorMessage } from "@/lib/tx-errors";
 import { TransactionReviewModal } from "@/components/TransactionReviewModal";
 import { RiskSummaryCard } from "@/components/RiskSummaryCard";
 import { FeedbackBanner } from "@/components/FeedbackBanner";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { useMounted } from "@/hooks/useMounted";
+import { usePoolState } from "@/hooks/usePoolState";
+
+const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
 
 type Props = {
   pool: `0x${string}`;
@@ -25,10 +36,19 @@ type Props = {
   backingDecimals: number;
   isNativeBacking: boolean;
   backingAsset?: `0x${string}`;
+  tokenSymbol?: string;
 };
 
-export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, backingAsset }: Props) {
+export function BorrowPanel({
+  pool,
+  token,
+  backingDecimals,
+  isNativeBacking,
+  backingAsset,
+  tokenSymbol,
+}: Props) {
   const { address } = useAccount();
+  const publicClient = usePublicClient();
   const mounted = useMounted();
   const [collateral, setCollateral] = useState("");
   const [borrowAmount, setBorrowAmount] = useState("");
@@ -52,7 +72,16 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
     }
   }, [borrowAmount, backingDecimals]);
 
-  const { data: maxBorrow } = useReadContract({
+  const borrowInputInvalid = Boolean(borrowAmount) && borrowParsed === 0n;
+  const collateralInputInvalid = Boolean(collateral) && collateralAmount === 0n;
+
+  const { data: floorPriceWad } = useReadContract({
+    address: pool,
+    abi: risePoolAbi,
+    functionName: "getFloorPrice",
+  });
+
+  const { data: maxBorrowOnChain } = useReadContract({
     address: pool,
     abi: risePoolAbi,
     functionName: "maxBorrow",
@@ -64,13 +93,100 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
     address: pool,
     abi: risePoolAbi,
     functionName: "getPosition",
-    args: [address ?? "0x0000000000000000000000000000000000000000"],
+    args: [address ?? zeroAddress],
     query: { enabled: Boolean(address) },
   });
 
+  const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [address ?? zeroAddress],
+    query: { enabled: Boolean(address && token) },
+  });
+
+  const { reserves } = usePoolState(pool);
+  const { data: realReserveWad } = useReadContract({
+    address: pool,
+    abi: risePoolAbi,
+    functionName: "realReserveWad",
+  });
+  const { data: totalBorrowedReserveWad } = useReadContract({
+    address: pool,
+    abi: risePoolAbi,
+    functionName: "totalBorrowedReserveWad",
+  });
   const { writeContractAsync, isPending } = useWriteContract();
   const receipt = useWaitForTransactionReceipt({ hash: txHash });
-  const waitingPosition = mounted && Boolean(address) && maxBorrow === undefined && position === undefined;
+  const waitingPosition = mounted && Boolean(address) && maxBorrowOnChain === undefined && position === undefined;
+
+  const backingSymbol = isNativeBacking ? "BNB" : "USDT";
+  const poolReserveBalance = reserves?.[2];
+  const availableBorrowLiquidity =
+    realReserveWad !== undefined && totalBorrowedReserveWad !== undefined
+      ? computeAvailableBorrowLiquidity(realReserveWad, totalBorrowedReserveWad, backingDecimals)
+      : undefined;
+  const reserveInfoLabel =
+    poolReserveBalance !== undefined && availableBorrowLiquidity !== undefined
+      ? `池内储备 ${formatTokenAmount(poolReserveBalance, backingDecimals, 6)} ${backingSymbol} · 可借流动性 ${formatTokenAmount(availableBorrowLiquidity, backingDecimals, 6)} ${backingSymbol}`
+      : "池内储备读取中…";
+
+  const existingCollateral = position?.[0] ?? 0n;
+  const existingDebt = position?.[1] ?? 0n;
+
+  const projectedMaxBorrow = useMemo(() => {
+    if (floorPriceWad === undefined) return undefined;
+    return computeMaxBorrowAmount({
+      floorPriceWad,
+      existingCollateral,
+      newCollateral: collateralAmount,
+      existingDebtBacking: existingDebt,
+      backingDecimals,
+    });
+  }, [backingDecimals, collateralAmount, existingCollateral, existingDebt, floorPriceWad]);
+
+  const collateralBalanceError = useMemo(() => {
+    if (collateralInputInvalid) return "请输入有效数字。";
+    return validateCollateralBalance(collateralAmount, tokenBalance);
+  }, [collateralAmount, collateralInputInvalid, tokenBalance]);
+
+  const borrowValidationError = useMemo(() => {
+    if (borrowInputInvalid) return "请输入有效数字。";
+    if (projectedMaxBorrow === undefined || borrowParsed === 0n) return null;
+    return validateBorrowAmount({
+      borrowAmount: borrowParsed,
+      maxBorrowAmount: projectedMaxBorrow,
+      collateralAmount,
+      availablePoolLiquidity: availableBorrowLiquidity,
+    });
+  }, [availableBorrowLiquidity, borrowInputInvalid, borrowParsed, collateralAmount, projectedMaxBorrow]);
+
+  const exceedsCollateralBalance = Boolean(
+    address && collateralAmount > 0n && tokenBalance !== undefined && collateralAmount > tokenBalance,
+  );
+
+  const collateralBalanceLabel = !mounted
+    ? "请先连接钱包"
+    : !address
+      ? "请先连接钱包"
+      : tokenBalance !== undefined
+        ? `钱包余额 ${formatAmountInput(tokenBalance, 18)} ${tokenSymbol ?? "代币"}`
+        : "余额读取中…";
+
+  const canSubmitBorrow =
+    Boolean(token && address) &&
+    collateralAmount > 0n &&
+    borrowParsed > 0n &&
+    !collateralBalanceError &&
+    !borrowValidationError &&
+    !exceedsCollateralBalance &&
+    projectedMaxBorrow !== undefined &&
+    borrowParsed <= projectedMaxBorrow;
+
+  useEffect(() => {
+    if (!receipt.isSuccess) return;
+    void refetchTokenBalance();
+  }, [receipt.isSuccess, refetchTokenBalance]);
 
   if (waitingPosition) {
     return (
@@ -86,25 +202,62 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
   }
 
   const originationFee = borrowParsed > 0n ? previewOriginationFee(borrowParsed) : 0n;
-  const debtNow = position?.[1] ?? 0n;
-  const additionalNow = maxBorrow ?? 0n;
-  const capNow = debtNow + additionalNow;
+  const debtNow = existingDebt;
+  const capNow = (projectedMaxBorrow ?? 0n) + debtNow;
   const healthNowPct = capNow > 0n ? Number(((capNow - debtNow) * 10_000n) / capNow) / 100 : 100;
   const projectedDebt = debtNow + borrowParsed;
   const healthAfterPct = capNow > 0n ? Number(((capNow > projectedDebt ? capNow - projectedDebt : 0n) * 10_000n) / capNow) / 100 : 100;
   const healthLevel = healthAfterPct < 10 ? "高风险" : healthAfterPct < 25 ? "中风险" : "低风险";
 
+  function fillMaxBorrow() {
+    if (projectedMaxBorrow === undefined || projectedMaxBorrow === 0n) return;
+    let amount = projectedMaxBorrow;
+    if (availableBorrowLiquidity !== undefined && availableBorrowLiquidity < amount) {
+      amount = availableBorrowLiquidity;
+    }
+    setBorrowAmount(formatUnits(amount, backingDecimals));
+    setErrorMessage(null);
+  }
+
+  function fillMaxCollateral() {
+    if (tokenBalance === undefined || tokenBalance === 0n) return;
+    setCollateral(formatAmountInput(tokenBalance, 18));
+    setErrorMessage(null);
+  }
+
+  function openBorrowReview() {
+    const balanceError = validateCollateralBalance(collateralAmount, tokenBalance);
+    if (balanceError) {
+      setErrorMessage(balanceError);
+      return;
+    }
+    const validationError = validateBorrowAmount({
+      borrowAmount: borrowParsed,
+      maxBorrowAmount: projectedMaxBorrow ?? 0n,
+      collateralAmount,
+      availablePoolLiquidity: availableBorrowLiquidity,
+    });
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+    setErrorMessage(null);
+    setReviewMode("borrow");
+  }
+
   async function handleBorrow() {
-    if (!token || !address || collateralAmount === 0n || borrowParsed === 0n) return;
+    if (!canSubmitBorrow || !token || !address || !publicClient) return;
 
     setErrorMessage(null);
 
     try {
-      await writeContractAsync({
-        address: token,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [pool, collateralAmount],
+      await ensureErc20Allowance({
+        publicClient,
+        owner: address,
+        token,
+        spender: pool,
+        required: collateralAmount,
+        writeContractAsync,
       });
       const hash = await writeContractAsync({
         address: pool,
@@ -119,18 +272,20 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
   }
 
   async function handleRepay() {
-    if (!address || !position || position[1] === 0n) return;
+    if (!address || !position || position[1] === 0n || !publicClient) return;
 
     setErrorMessage(null);
 
     try {
       const debt = position[1];
       if (!isNativeBacking && backingAsset) {
-        await writeContractAsync({
-          address: backingAsset,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [pool, debt],
+        await ensureErc20Allowance({
+          publicClient,
+          owner: address,
+          token: backingAsset,
+          spender: pool,
+          required: debt,
+          writeContractAsync,
         });
       }
       const hash = await writeContractAsync({
@@ -155,26 +310,68 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <label className="block text-sm text-[#a9c0dd]">
-          抵押代币
+          <span className="flex items-center justify-between gap-2">
+            <span>抵押代币</span>
+            <button
+              type="button"
+              onClick={fillMaxCollateral}
+              disabled={!tokenBalance || tokenBalance === 0n}
+              className="text-xs text-[#a8f2dc] hover:text-[#cdf9ed] disabled:opacity-40"
+            >
+              填入余额
+            </button>
+          </span>
           <input
             value={collateral}
-            onChange={(event) => setCollateral(event.target.value)}
+            onChange={(event) => {
+              setCollateral(event.target.value);
+              setErrorMessage(null);
+            }}
             className="field mt-2 w-full rounded-xl px-3 py-2"
           />
+          <p className="mt-1 text-xs text-[#93aacc]">{collateralBalanceLabel}</p>
+          {collateralBalanceError && collateralAmount > 0n ? (
+            <p className="mt-1 text-xs text-[#ffcf9c]">{collateralBalanceError}</p>
+          ) : null}
         </label>
         <label className="block text-sm text-[#a9c0dd]">
-          借出储备
+          <span className="flex items-center justify-between gap-2">
+            <span>借出储备</span>
+            <button
+              type="button"
+              onClick={fillMaxBorrow}
+              disabled={!projectedMaxBorrow || projectedMaxBorrow === 0n}
+              className="text-xs text-[#a8f2dc] hover:text-[#cdf9ed] disabled:opacity-40"
+            >
+              填入上限
+            </button>
+          </span>
           <input
             value={borrowAmount}
-            onChange={(event) => setBorrowAmount(event.target.value)}
+            onChange={(event) => {
+              setBorrowAmount(event.target.value);
+              setErrorMessage(null);
+            }}
             className="field mt-2 w-full rounded-xl px-3 py-2"
           />
+          <p className="mt-1 text-xs text-[#93aacc]">{reserveInfoLabel}</p>
+          {borrowInputInvalid ? <p className="mt-1 text-xs text-[#ffcf9c]">请输入有效数量</p> : null}
+          {borrowValidationError && borrowParsed > 0n ? (
+            <p className="mt-1 text-xs text-[#ffcf9c]">{borrowValidationError}</p>
+          ) : null}
         </label>
       </div>
 
       <div className="mt-4 rounded-xl border border-white/10 bg-[#071526ad] p-4 text-sm text-[#d2e5ff]">
-        <p>当前可借：{maxBorrow !== undefined ? formatTokenAmount(maxBorrow, backingDecimals, 6) : "—"}</p>
-        <p>开仓费：{borrowParsed > 0n ? formatTokenAmount(originationFee, backingDecimals, 6) : "—"}</p>
+        <p>
+          本次最多可借：
+          {projectedMaxBorrow !== undefined ? formatTokenAmount(projectedMaxBorrow, backingDecimals, 6) : "—"}
+          {collateralAmount > 0n ? "（含当前抵押与表单新增抵押）" : null}
+        </p>
+        <p className="mt-1 text-xs text-[#93aacc]">
+          链上当前仓位可追加：{maxBorrowOnChain !== undefined ? formatTokenAmount(maxBorrowOnChain, backingDecimals, 6) : "—"}
+        </p>
+        <p className="mt-2">开仓费：{borrowParsed > 0n ? formatTokenAmount(originationFee, backingDecimals, 6) : "—"}</p>
         <p>
           当前仓位：抵押 {position ? formatTokenAmount(position[0], 18, 4) : "—"} / 债务
           {position ? formatTokenAmount(position[1], backingDecimals, 6) : "—"}
@@ -194,8 +391,8 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
-          onClick={() => setReviewMode("borrow")}
-          disabled={isPending}
+          onClick={openBorrowReview}
+          disabled={isPending || !canSubmitBorrow}
           className="primary-btn flex-1 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
         >
           开仓借贷
@@ -210,8 +407,8 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
         </button>
       </div>
 
-      {errorMessage ? <FeedbackBanner tone="error" message={errorMessage} /> : null}
-      {receipt.isSuccess ? <FeedbackBanner tone="success" message="交易已确认。" /> : null}
+      {errorMessage ? <FeedbackBanner tone="error" message={errorMessage} className="mt-4" /> : null}
+      {receipt.isSuccess ? <FeedbackBanner tone="success" message="交易已确认。" className="mt-4" /> : null}
 
       <TransactionReviewModal
         open={Boolean(reviewMode)}
@@ -220,7 +417,9 @@ export function BorrowPanel({ pool, token, backingDecimals, isNativeBacking, bac
           reviewMode === "borrow"
             ? [
                 `抵押数量：${collateral || "0"}`,
+                `钱包余额：${tokenBalance !== undefined ? formatTokenAmount(tokenBalance, 18, 4) : "—"} ${tokenSymbol ?? "代币"}`,
                 `借出数量：${borrowAmount || "0"}`,
+                `可借上限：${projectedMaxBorrow !== undefined ? formatTokenAmount(projectedMaxBorrow, backingDecimals, 6) : "—"}`,
                 `开仓费：${borrowParsed > 0n ? formatTokenAmount(originationFee, backingDecimals, 6) : "—"}`,
                 `开仓后健康度：${healthAfterPct.toFixed(2)}%（${healthLevel}）`,
               ]

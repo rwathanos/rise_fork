@@ -40,6 +40,18 @@ export function getTxErrorMessage(error: unknown): string {
   }
 
   const text = collectErrorText(error).join(" ").trim();
+  const lower = text.toLowerCase();
+
+  if (lower.includes("insufficientcollateral")) {
+    return "借出数量超过可借上限，请减少借出储备或增加抵押代币。";
+  }
+  if (lower.includes("insufficientliquidity")) {
+    return "池内可用储备不足，请减少借出数量或稍后再试。";
+  }
+  if (lower.includes("slippageexceeded")) {
+    return "价格滑点超过限制，请调整数量后重试。";
+  }
+
   if (text) {
     const firstLine = text.split("\n")[0]?.trim();
     if (firstLine) return firstLine;
