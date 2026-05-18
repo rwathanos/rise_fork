@@ -1,10 +1,11 @@
 "use client";
 
-import { Component, type ReactNode } from "react";
+import { Component, useMemo, type ReactNode } from "react";
 
 import { FeedbackBanner } from "@/components/FeedbackBanner";
 import { TokenCard } from "@/components/TokenCard";
 import { EmptyStateCard } from "@/components/EmptyStateCard";
+import { usePoolsPrices } from "@/hooks/usePoolsPrices";
 import { useTokenRegistry } from "@/hooks/useTokenRegistry";
 
 type BoundaryState = { error: Error | null };
@@ -45,6 +46,8 @@ class DiscoveryErrorBoundary extends Component<{ children: ReactNode }, Boundary
 
 function DiscoveryFeedInner() {
   const { tokens, isSyncing, hasSyncedOnce, syncError, refresh } = useTokenRegistry();
+  const pools = useMemo(() => tokens.map((t) => t.pool), [tokens]);
+  const { byPool } = usePoolsPrices(pools);
 
   return (
     <section>
@@ -73,9 +76,17 @@ function DiscoveryFeedInner() {
       ) : null}
       {tokens.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {tokens.map((token) => (
-            <TokenCard key={token.pool} token={token} />
-          ))}
+            {tokens.map((token) => {
+              const prices = byPool.get(token.pool.toLowerCase());
+              return (
+                <TokenCard
+                  key={token.pool}
+                  token={token}
+                  marketPrice={prices?.marketPrice}
+                  floorPrice={prices?.floorPrice}
+                />
+              );
+            })}
         </div>
       ) : null}
     </section>

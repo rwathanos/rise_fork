@@ -1,13 +1,16 @@
 "use client";
 
-import { usePoolState } from "@/hooks/usePoolState";
+import { usePoolsPrices } from "@/hooks/usePoolsPrices";
 import type { TokenSummary } from "@/lib/token-registry";
 
 import { TokenCard } from "./TokenCard";
 import { LoadingSkeleton } from "./LoadingSkeleton";
 
 export function TokenCardLive({ token }: { token: TokenSummary }) {
-  const { marketPrice, floorPrice, isLoading } = usePoolState(token.pool);
+  const { byPool, isLoading } = usePoolsPrices(token.pool ? [token.pool] : []);
+  const prices = token.pool ? byPool.get(token.pool.toLowerCase()) : undefined;
+  const marketPrice = prices?.marketPrice;
+  const floorPrice = prices?.floorPrice;
   if (isLoading && marketPrice === undefined && floorPrice === undefined) {
     return (
       <LoadingSkeleton
