@@ -5,9 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useBlockNumber } from "wagmi";
 
 const ACTIVITY_WINDOW_MS = 45_000;
+const POLL_INTERVAL_MS = 3_000;
 
-/** Invalidate wagmi reads for a pool and optionally follow new blocks after user txs. */
-export function usePoolActivityRefresh(pool?: `0x${string}`) {
+type RefetchPoolState = () => Promise<unknown>;
+
+/** Invalidate wagmi reads for a pool and refetch the page-level pool state. */
+export function usePoolActivityRefresh(pool?: `0x${string}`, refetchPoolState?: RefetchPoolState) {
   const queryClient = useQueryClient();
   const { data: blockNumber } = useBlockNumber({ watch: true });
   const lastActivityAtRef = useRef(0);
@@ -21,6 +24,11 @@ export function usePoolActivityRefresh(pool?: `0x${string}`) {
     });
   }, [pool, queryClient]);
 
+  const refetchPoolSnapshot = useCallback(async () => {
+    await invalidatePoolQueries();
+    await refetchPoolState?.();
+  }, [invalidatePoolQueries, refetchPoolState]);
+
   const markPoolActivity = useCallback(() => {
     lastActivityAtRef.current = Date.now();
     lastHandledBlockRef.current = undefined;
@@ -28,8 +36,11 @@ export function usePoolActivityRefresh(pool?: `0x${string}`) {
 
   const refreshPoolData = useCallback(async () => {
     markPoolActivity();
-    await invalidatePoolQueries();
-  }, [invalidatePoolQueries, markPoolActivity]);
+    await refetchPoolSnapshot();
+  }, [markPoolActivity, refetchPoolSnapshot]);
+
+  const isPoolActivityRecent =
+    lastActivityAtRef.current > 0 && Date.now() - lastActivityAtRef.current <= ACTIVITY_WINDOW_MS;
 
   useEffect(() => {
     if (!pool || blockNumber === undefined) return;
@@ -37,8 +48,18 @@ export function usePoolActivityRefresh(pool?: `0x${string}`) {
     if (lastHandledBlockRef.current === blockNumber) return;
 
     lastHandledBlockRef.current = blockNumber;
-    void invalidatePoolQueries();
-  }, [blockNumber, invalidatePoolQueries, pool]);
+    void refetchPoolSnapshot();
+  }, [blockNumber, pool, refetchPoolSnapshot]);
 
-  return { refreshPoolData, markPoolActivity, invalidatePoolQueries };
+  useEffect(() => {
+    if (!pool || !isPoolActivityRecent) return;
+
+    const timer = window.setInterval(() => {
+      void refetchPoolSnapshot();
+    }, POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [isPoolActivityRecent, pool, refetchPoolSnapshot]);
+
+  return { refreshPoolData, markPoolActivity, invalidatePoolQueries, isPoolActivityRecent };
 }

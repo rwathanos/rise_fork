@@ -125,10 +125,17 @@ export function SwapPanel({
 
   useEffect(() => {
     if (!receipt.isSuccess) return;
-    void refetchNativeBalance();
-    void refetchBackingBalance();
-    void refetchTokenBalance();
-    void onPoolActivity?.();
+
+    const syncAfterTrade = async () => {
+      await Promise.all([
+        refetchNativeBalance(),
+        refetchBackingBalance(),
+        refetchTokenBalance(),
+        onPoolActivity?.(),
+      ]);
+    };
+
+    void syncAfterTrade();
   }, [onPoolActivity, receipt.data?.blockNumber, receipt.isSuccess, refetchBackingBalance, refetchNativeBalance, refetchTokenBalance]);
 
   const feePreview =

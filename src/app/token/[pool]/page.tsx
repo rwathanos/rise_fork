@@ -22,7 +22,7 @@ export default function TokenPage() {
   const { tokens } = useTokenRegistry();
   const tokenEntry = tokens.find((item) => item.pool.toLowerCase() === pool.toLowerCase());
   const state = usePoolState(pool);
-  const { refreshPoolData } = usePoolActivityRefresh(pool);
+  const { refreshPoolData } = usePoolActivityRefresh(pool, state.refetch);
 
   const backingAsset = state.isNativeBacking ? undefined : usdtAddress(defaultChainId);
   const cover = pickCoverArt(pool);

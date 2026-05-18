@@ -175,8 +175,12 @@ export function BorrowPanel({
     borrowParsed <= projectedMaxBorrow;
 
   const refreshBorrowData = useCallback(async () => {
-    await Promise.all([refetchTokenBalance(), refetchMaxBorrow(), refetchPosition()]);
-    await onPoolActivity?.();
+    await Promise.all([
+      refetchTokenBalance(),
+      refetchMaxBorrow(),
+      refetchPosition(),
+      onPoolActivity?.(),
+    ]);
   }, [onPoolActivity, refetchMaxBorrow, refetchPosition, refetchTokenBalance]);
 
   useEffect(() => {
