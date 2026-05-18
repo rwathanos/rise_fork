@@ -9,7 +9,6 @@ import { SwapPanel } from "@/components/SwapPanel";
 import { TokenHeroHeader } from "@/components/TokenHeroHeader";
 import { defaultChainId, explorerAddressUrl, usdtAddress } from "@/lib/chains";
 import { useMounted } from "@/hooks/useMounted";
-import { usePoolActivityRefresh } from "@/hooks/usePoolActivityRefresh";
 import { usePoolState } from "@/hooks/usePoolState";
 import { useTokenRegistry } from "@/hooks/useTokenRegistry";
 import { pickCoverArt } from "@/lib/cover-art";
@@ -21,8 +20,7 @@ export default function TokenPage() {
   const { address } = useAccount();
   const { tokens } = useTokenRegistry();
   const tokenEntry = tokens.find((item) => item.pool.toLowerCase() === pool.toLowerCase());
-  const state = usePoolState(pool);
-  const { refreshPoolData } = usePoolActivityRefresh(pool, state.refetch);
+  const state = usePoolState(pool, { pollIntervalMs: 3_000 });
 
   const backingAsset = state.isNativeBacking ? undefined : usdtAddress(defaultChainId);
   const cover = pickCoverArt(pool);
@@ -61,7 +59,6 @@ export default function TokenPage() {
           backingAsset={backingAsset}
           creatorVariableFeeBps={state.creatorVariableFeeBps ?? 0}
           tokenSymbol={tokenEntry?.symbol}
-          onPoolActivity={refreshPoolData}
         />
         <BorrowPanel
           pool={pool}
@@ -74,7 +71,6 @@ export default function TokenPage() {
           realReserveWad={state.realReserveWad}
           totalBorrowedReserveWad={state.totalBorrowedReserveWad}
           floorPriceWad={state.floorPrice}
-          onPoolActivity={refreshPoolData}
         />
       </div>
 

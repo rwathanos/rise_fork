@@ -5,7 +5,9 @@ import { formatTokenAmount } from "@/lib/format";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 
 export function PoolMetrics({ pool }: { pool: `0x${string}` }) {
-  const { marketPrice, floorPrice, reserves, backingDecimals, creatorVariableFeeBps, isLoading } = usePoolState(pool);
+  const { marketPrice, floorPrice, reserves, backingDecimals, creatorVariableFeeBps, isLoading } = usePoolState(pool, {
+    pollIntervalMs: 3_000,
+  });
 
   if (isLoading && !reserves && marketPrice === undefined && floorPrice === undefined) {
     return (

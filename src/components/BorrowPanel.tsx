@@ -40,7 +40,6 @@ type Props = {
   realReserveWad?: bigint;
   totalBorrowedReserveWad?: bigint;
   floorPriceWad?: bigint;
-  onPoolActivity?: () => void | Promise<void>;
 };
 
 export function BorrowPanel({
@@ -54,7 +53,6 @@ export function BorrowPanel({
   realReserveWad,
   totalBorrowedReserveWad,
   floorPriceWad,
-  onPoolActivity,
 }: Props) {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -89,7 +87,7 @@ export function BorrowPanel({
     abi: risePoolAbi,
     functionName: "maxBorrow",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address), staleTime: 0 },
+    query: { enabled: Boolean(address), staleTime: 0, refetchInterval: 3_000 },
   });
 
   const { data: position, refetch: refetchPosition } = useReadContract({
@@ -97,7 +95,7 @@ export function BorrowPanel({
     abi: risePoolAbi,
     functionName: "getPosition",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address), staleTime: 0 },
+    query: { enabled: Boolean(address), staleTime: 0, refetchInterval: 3_000 },
   });
 
   const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
@@ -105,7 +103,7 @@ export function BorrowPanel({
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address && token), staleTime: 0 },
+    query: { enabled: Boolean(address && token), staleTime: 0, refetchInterval: 3_000 },
   });
 
   const { writeContractAsync, isPending } = useWriteContract();
@@ -175,13 +173,8 @@ export function BorrowPanel({
     borrowParsed <= projectedMaxBorrow;
 
   const refreshBorrowData = useCallback(async () => {
-    await Promise.all([
-      refetchTokenBalance(),
-      refetchMaxBorrow(),
-      refetchPosition(),
-      onPoolActivity?.(),
-    ]);
-  }, [onPoolActivity, refetchMaxBorrow, refetchPosition, refetchTokenBalance]);
+    await Promise.all([refetchTokenBalance(), refetchMaxBorrow(), refetchPosition()]);
+  }, [refetchMaxBorrow, refetchPosition, refetchTokenBalance]);
 
   useEffect(() => {
     if (!receipt.isSuccess) return;

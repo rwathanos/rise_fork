@@ -4,7 +4,14 @@ import { useReadContracts } from "wagmi";
 
 import { risePoolAbi } from "@/lib/abis";
 
-export function usePoolState(pool?: `0x${string}`) {
+type Options = {
+  /** When set, pool reads refetch on this interval (ms). */
+  pollIntervalMs?: number | false;
+};
+
+export function usePoolState(pool?: `0x${string}`, options?: Options) {
+  const pollIntervalMs = options?.pollIntervalMs ?? false;
+
   const { data, refetch, isLoading } = useReadContracts({
     contracts: pool
       ? [
@@ -25,6 +32,7 @@ export function usePoolState(pool?: `0x${string}`) {
     query: {
       enabled: Boolean(pool),
       staleTime: 0,
+      refetchInterval: pollIntervalMs,
     },
   });
 
