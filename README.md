@@ -1,43 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RISE Web（Next.js）
 
-## Getting Started
-
-First, run the development server:
+## 本地开发
 
 ```bash
+cp .env.example .env.local   # 配置 Factory、RPC
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 服务器部署（Nginx 8081 → Next 3000）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 为什么曾经要 `rsync`？
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Nginx 用户 `www-data` **读不了** `/home/ubuntu/...` 下的文件，且 Next 对含 `~` 的静态 chunk 易返回 500。  
+所以曾把 `.next/static` **复制**到 `/var/www/rise-public/`。
 
-## Learn More
+### 可以取消 rsync 吗？
 
-To learn more about Next.js, take a look at the following resources:
+**可以。** 一次性做软链，以后 `npm run build` 会原地更新 `.next/static`，Nginx 通过链接直接读到新文件：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# 一次性（路径按你的服务器改）
+sudo WEB_DIR=/home/ubuntu/rise/rise_fork/web bash deploy/link-static-for-nginx.sh
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 日常发版（不需要 rsync）
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-
-git pull     # 或同步最新代码
+```bash
+cd "$WEB_DIR"
+git pull
 npm run build
-sudo rsync -a --delete .next/static/ /var/www/rise-public/_next/static/
 pkill -f "next start" || true
 nohup npm run start > nohup.out 2>&1 &
+```
+
+静态资源会随 build 自动更新；只需在改 Nginx 配置或换项目目录时再跑一遍 `link-static-for-nginx.sh`。
+
+详见 `docs/DEPLOYMENT.md`、`deploy/nginx-rise.conf.example`。
