@@ -175,11 +175,16 @@ export async function fetchAllTokenMarkets(
   factory: `0x${string}`,
   onProgress?: (tokens: TokenSummary[]) => void,
 ): Promise<TokenSummary[]> {
-  const total = await publicClient.readContract({
-    address: factory,
-    abi: riseFactoryAbi,
-    functionName: "allPoolsLength",
-  });
+  let total: bigint;
+  try {
+    total = await publicClient.readContract({
+      address: factory,
+      abi: riseFactoryAbi,
+      functionName: "allPoolsLength",
+    });
+  } catch {
+    throw new Error("Factory 不支持 allPoolsLength，请确认已部署新版合约并配置正确地址");
+  }
 
   const tokens: TokenSummary[] = [];
   let offset = 0n;

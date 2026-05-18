@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePublicClient } from "wagmi";
 
 import { factoryAddress } from "@/lib/contracts";
@@ -16,13 +16,16 @@ import { getTxErrorMessage } from "@/lib/tx-errors";
 import { preferredChain } from "@/lib/wagmi";
 
 export function useTokenRegistry() {
-  // Start empty so SSR and the first client render match (localStorage is client-only).
   const [tokens, setTokens] = useState<TokenSummary[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasSyncedOnce, setHasSyncedOnce] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const factory = factoryAddress();
   const publicClient = usePublicClient({ chainId: preferredChain.id });
+  const publicClientRef = useRef(publicClient);
+  const syncInFlightRef = useRef(false);
+
+  publicClientRef.current = publicClient;
 
   useEffect(() => {
     const cached = loadTokenRegistry();
@@ -32,27 +35,35 @@ export function useTokenRegistry() {
   }, []);
 
   const sync = useCallback(async () => {
+    if (syncInFlightRef.current) return;
     if (!factory) {
       setHasSyncedOnce(true);
       setSyncError("未配置 Factory 地址");
       return;
     }
-    if (!publicClient) {
+
+    const client = publicClientRef.current;
+    if (!client) {
       setHasSyncedOnce(true);
       return;
     }
 
+    syncInFlightRef.current = true;
     setIsSyncing(true);
     setSyncError(null);
 
     try {
-      let markets = await fetchAllTokenMarkets(publicClient, factory, (partial) => {
-        const safe = sanitizeTokenRegistry(partial);
-        saveTokenRegistry(safe);
-        setTokens(safe);
+      let markets = await fetchAllTokenMarkets(client, factory, (partial) => {
+        try {
+          const safe = sanitizeTokenRegistry(partial);
+          saveTokenRegistry(safe);
+          setTokens(safe);
+        } catch {
+          // Ignore progress callback failures so sync can continue.
+        }
       });
 
-      markets = sanitizeTokenRegistry(await batchApplyTokenLabels(publicClient, markets));
+      markets = sanitizeTokenRegistry(await batchApplyTokenLabels(client, markets));
 
       saveTokenRegistry(markets);
       setTokens(markets);
@@ -62,11 +73,15 @@ export function useTokenRegistry() {
     } finally {
       setHasSyncedOnce(true);
       setIsSyncing(false);
+      syncInFlightRef.current = false;
     }
-  }, [factory, publicClient]);
+  }, [factory]);
 
   useEffect(() => {
-    void sync();
+    const timer = window.setTimeout(() => {
+      void sync();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [sync]);
 
   return {

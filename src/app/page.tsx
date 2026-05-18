@@ -1,15 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 
-import { FeedbackBanner } from "@/components/FeedbackBanner";
-import { TokenCard } from "@/components/TokenCard";
-import { EmptyStateCard } from "@/components/EmptyStateCard";
 import { factoryAddress } from "@/lib/contracts";
-import { useTokenRegistry } from "@/hooks/useTokenRegistry";
+
+const DiscoveryFeed = dynamic(() => import("@/components/DiscoveryFeed").then((m) => m.DiscoveryFeed), {
+  ssr: false,
+  loading: () => (
+    <section>
+      <h2 className="section-title mb-4 text-xl font-semibold">发现</h2>
+      <p className="text-sm text-[#a5bcdb]">正在加载市场列表…</p>
+    </section>
+  ),
+});
 
 export default function HomePage() {
-  const { tokens, isSyncing, hasSyncedOnce, syncError, refresh } = useTokenRegistry();
   const factory = factoryAddress();
 
   return (
@@ -34,37 +40,11 @@ export default function HomePage() {
 
       {!factory ? (
         <div className="rounded-2xl border border-[#ffdca5]/35 bg-[#ffdca51c] p-4 text-sm text-[#ffe8c8]">
-          请在 `web/.env.local` 配置 `NEXT_PUBLIC_FACTORY_ADDRESS` 与 RPC 后再连接链上数据。
+          请在服务器 `web/.env` 配置 `NEXT_PUBLIC_FACTORY_ADDRESS` 与 RPC 后重新 build，再重启 Next。
         </div>
       ) : null}
 
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="section-title text-xl font-semibold">发现</h2>
-          <div className="flex items-center gap-3 text-sm text-[#a5bcdb]">
-            <span>{tokens.length} 个市场</span>
-            <button type="button" onClick={refresh} disabled={isSyncing} className="line-btn rounded-full px-3 py-1 text-xs disabled:opacity-60">
-              {isSyncing ? "同步中…" : "刷新"}
-            </button>
-          </div>
-        </div>
-        {isSyncing ? (
-          <p className="mb-4 text-sm text-[#a5bcdb]">
-            {tokens.length > 0 ? "正在后台更新市场列表…" : "正在从 Factory 批量加载市场列表，请稍候…"}
-          </p>
-        ) : null}
-        {syncError ? <FeedbackBanner tone="error" message={`同步失败：${syncError}`} className="mb-4" /> : null}
-        {!isSyncing && hasSyncedOnce && tokens.length === 0 ? (
-          <EmptyStateCard title="还没有代币市场" description="先创建第一个市场，或点击刷新重新同步 Factory 事件。" />
-        ) : null}
-        {tokens.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {tokens.map((token) => (
-              <TokenCard key={token.pool} token={token} />
-            ))}
-          </div>
-        ) : null}
-      </section>
+      <DiscoveryFeed />
     </div>
   );
 }
