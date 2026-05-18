@@ -22,7 +22,10 @@ export function usePoolState(pool?: `0x${string}`) {
           { address: pool, abi: risePoolAbi, functionName: "totalBorrowedReserveWad" },
         ]
       : [],
-    query: { enabled: Boolean(pool) },
+    query: {
+      enabled: Boolean(pool),
+      staleTime: 0,
+    },
   });
 
   if (!pool || !data) {

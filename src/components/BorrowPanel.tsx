@@ -26,7 +26,6 @@ import { RiskSummaryCard } from "@/components/RiskSummaryCard";
 import { FeedbackBanner } from "@/components/FeedbackBanner";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { useMounted } from "@/hooks/useMounted";
-import { usePoolState } from "@/hooks/usePoolState";
 
 const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
 
@@ -37,7 +36,11 @@ type Props = {
   isNativeBacking: boolean;
   backingAsset?: `0x${string}`;
   tokenSymbol?: string;
-  onPoolActivity?: () => void;
+  poolReserveBalance?: bigint;
+  realReserveWad?: bigint;
+  totalBorrowedReserveWad?: bigint;
+  floorPriceWad?: bigint;
+  onPoolActivity?: () => void | Promise<void>;
 };
 
 export function BorrowPanel({
@@ -47,6 +50,10 @@ export function BorrowPanel({
   isNativeBacking,
   backingAsset,
   tokenSymbol,
+  poolReserveBalance,
+  realReserveWad,
+  totalBorrowedReserveWad,
+  floorPriceWad,
   onPoolActivity,
 }: Props) {
   const { address } = useAccount();
@@ -77,20 +84,12 @@ export function BorrowPanel({
   const borrowInputInvalid = Boolean(borrowAmount) && borrowParsed === 0n;
   const collateralInputInvalid = Boolean(collateral) && collateralAmount === 0n;
 
-  const {
-    reserves,
-    floorPrice: floorPriceWad,
-    realReserveWad,
-    totalBorrowedReserveWad,
-    refetch: refetchPoolState,
-  } = usePoolState(pool);
-
   const { data: maxBorrowOnChain, refetch: refetchMaxBorrow } = useReadContract({
     address: pool,
     abi: risePoolAbi,
     functionName: "maxBorrow",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address) },
+    query: { enabled: Boolean(address), staleTime: 0 },
   });
 
   const { data: position, refetch: refetchPosition } = useReadContract({
@@ -98,7 +97,7 @@ export function BorrowPanel({
     abi: risePoolAbi,
     functionName: "getPosition",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address) },
+    query: { enabled: Boolean(address), staleTime: 0 },
   });
 
   const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
@@ -106,7 +105,7 @@ export function BorrowPanel({
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [address ?? zeroAddress],
-    query: { enabled: Boolean(address && token) },
+    query: { enabled: Boolean(address && token), staleTime: 0 },
   });
 
   const { writeContractAsync, isPending } = useWriteContract();
@@ -114,7 +113,6 @@ export function BorrowPanel({
   const waitingPosition = mounted && Boolean(address) && maxBorrowOnChain === undefined && position === undefined;
 
   const backingSymbol = isNativeBacking ? "BNB" : "USDT";
-  const poolReserveBalance = reserves?.[2];
   const availableBorrowLiquidity =
     realReserveWad !== undefined && totalBorrowedReserveWad !== undefined
       ? computeAvailableBorrowLiquidity(realReserveWad, totalBorrowedReserveWad, backingDecimals)
@@ -177,19 +175,14 @@ export function BorrowPanel({
     borrowParsed <= projectedMaxBorrow;
 
   const refreshBorrowData = useCallback(async () => {
-    await Promise.all([
-      refetchPoolState(),
-      refetchTokenBalance(),
-      refetchMaxBorrow(),
-      refetchPosition(),
-    ]);
-    onPoolActivity?.();
-  }, [onPoolActivity, refetchMaxBorrow, refetchPoolState, refetchPosition, refetchTokenBalance]);
+    await Promise.all([refetchTokenBalance(), refetchMaxBorrow(), refetchPosition()]);
+    await onPoolActivity?.();
+  }, [onPoolActivity, refetchMaxBorrow, refetchPosition, refetchTokenBalance]);
 
   useEffect(() => {
     if (!receipt.isSuccess) return;
     void refreshBorrowData();
-  }, [receipt.isSuccess, refreshBorrowData]);
+  }, [receipt.data?.blockNumber, receipt.isSuccess, refreshBorrowData]);
 
   if (waitingPosition) {
     return (

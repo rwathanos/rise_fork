@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 
@@ -10,6 +9,7 @@ import { SwapPanel } from "@/components/SwapPanel";
 import { TokenHeroHeader } from "@/components/TokenHeroHeader";
 import { defaultChainId, explorerAddressUrl, usdtAddress } from "@/lib/chains";
 import { useMounted } from "@/hooks/useMounted";
+import { usePoolActivityRefresh } from "@/hooks/usePoolActivityRefresh";
 import { usePoolState } from "@/hooks/usePoolState";
 import { useTokenRegistry } from "@/hooks/useTokenRegistry";
 import { pickCoverArt } from "@/lib/cover-art";
@@ -22,10 +22,7 @@ export default function TokenPage() {
   const { tokens } = useTokenRegistry();
   const tokenEntry = tokens.find((item) => item.pool.toLowerCase() === pool.toLowerCase());
   const state = usePoolState(pool);
-
-  const refreshPoolData = useCallback(() => {
-    void state.refetch();
-  }, [state.refetch]);
+  const { refreshPoolData } = usePoolActivityRefresh(pool);
 
   const backingAsset = state.isNativeBacking ? undefined : usdtAddress(defaultChainId);
   const cover = pickCoverArt(pool);
@@ -73,6 +70,10 @@ export default function TokenPage() {
           isNativeBacking={Boolean(state.isNativeBacking)}
           backingAsset={backingAsset}
           tokenSymbol={tokenEntry?.symbol}
+          poolReserveBalance={state.reserves?.[2]}
+          realReserveWad={state.realReserveWad}
+          totalBorrowedReserveWad={state.totalBorrowedReserveWad}
+          floorPriceWad={state.floorPrice}
           onPoolActivity={refreshPoolData}
         />
       </div>
