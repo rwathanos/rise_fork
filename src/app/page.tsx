@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { FeedbackBanner } from "@/components/FeedbackBanner";
-import { TokenCardLive } from "@/components/TokenCardLive";
+import { TokenCard } from "@/components/TokenCard";
 import { EmptyStateCard } from "@/components/EmptyStateCard";
 import { factoryAddress } from "@/lib/contracts";
 import { useTokenRegistry } from "@/hooks/useTokenRegistry";
@@ -60,7 +60,7 @@ export default function HomePage() {
         {tokens.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2">
             {tokens.map((token) => (
-              <TokenCardLive key={token.pool} token={token} />
+              <TokenCard key={token.pool} token={token} />
             ))}
           </div>
         ) : null}

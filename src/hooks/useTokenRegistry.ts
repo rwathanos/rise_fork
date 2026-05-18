@@ -6,7 +6,12 @@ import { usePublicClient } from "wagmi";
 import { factoryAddress } from "@/lib/contracts";
 import { fetchAllTokenMarkets } from "@/lib/factory-token-list";
 import { batchApplyTokenLabels } from "@/lib/token-enrichment";
-import { loadTokenRegistry, saveTokenRegistry, type TokenSummary } from "@/lib/token-registry";
+import {
+  loadTokenRegistry,
+  sanitizeTokenRegistry,
+  saveTokenRegistry,
+  type TokenSummary,
+} from "@/lib/token-registry";
 import { getTxErrorMessage } from "@/lib/tx-errors";
 import { preferredChain } from "@/lib/wagmi";
 
@@ -27,26 +32,35 @@ export function useTokenRegistry() {
   }, []);
 
   const sync = useCallback(async () => {
-    if (!factory || !publicClient) return;
+    if (!factory) {
+      setHasSyncedOnce(true);
+      setSyncError("未配置 Factory 地址");
+      return;
+    }
+    if (!publicClient) {
+      setHasSyncedOnce(true);
+      return;
+    }
 
     setIsSyncing(true);
     setSyncError(null);
 
     try {
       let markets = await fetchAllTokenMarkets(publicClient, factory, (partial) => {
-        saveTokenRegistry(partial);
-        setTokens(partial);
+        const safe = sanitizeTokenRegistry(partial);
+        saveTokenRegistry(safe);
+        setTokens(safe);
       });
 
-      markets = await batchApplyTokenLabels(publicClient, markets);
+      markets = sanitizeTokenRegistry(await batchApplyTokenLabels(publicClient, markets));
 
       saveTokenRegistry(markets);
       setTokens(markets);
-      setHasSyncedOnce(true);
     } catch (error) {
       setSyncError(getTxErrorMessage(error));
       setTokens(loadTokenRegistry());
     } finally {
+      setHasSyncedOnce(true);
       setIsSyncing(false);
     }
   }, [factory, publicClient]);

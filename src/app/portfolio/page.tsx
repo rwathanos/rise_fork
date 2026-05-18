@@ -55,11 +55,11 @@ export default function PortfolioPage() {
         <section className="space-y-4">
           <h2 className="section-title text-lg font-semibold">我创建的代币</h2>
           {claimError ? <p className="text-sm text-[#ffcf9c]">{claimError}</p> : null}
-          {tokens.filter((token) => token.creator.toLowerCase() === address?.toLowerCase()).length === 0 ? (
+          {tokens.filter((token) => address && token.creator.toLowerCase() === address.toLowerCase()).length === 0 ? (
             <EmptyStateCard title="暂无你创建的市场" description="创建代币后可在此领取创作者费用并管理市场。" className="p-8" />
           ) : (
             tokens
-              .filter((token) => token.creator.toLowerCase() === address?.toLowerCase())
+              .filter((token) => address && token.creator.toLowerCase() === address.toLowerCase())
               .map((token) => (
                 <CreatorRow
                   key={token.pool}

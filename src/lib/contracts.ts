@@ -6,6 +6,7 @@ export function factoryAddress(): `0x${string}` | undefined {
   return value as `0x${string}`;
 }
 
-export function isNativeBacking(backingAsset: string) {
+export function isNativeBacking(backingAsset?: string) {
+  if (!backingAsset) return true;
   return backingAsset.toLowerCase() === zeroAddress;
 }

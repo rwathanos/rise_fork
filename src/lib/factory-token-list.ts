@@ -189,15 +189,19 @@ export async function fetchAllTokenMarkets(
     const remaining = total - offset;
     const limit = remaining > FACTORY_BATCH_LIMIT ? FACTORY_BATCH_LIMIT : remaining;
 
-    const [marketsPage, labelsPage] = await Promise.all([
-      publicClient.readContract({
-        address: factory,
-        abi: riseFactoryAbi,
-        functionName: "getTokenMarkets",
-        args: [offset, limit],
-      }) as Promise<unknown[]>,
-      fetchTokenLabelsPage(publicClient, factory, offset, limit),
-    ]);
+    const marketsPage = (await publicClient.readContract({
+      address: factory,
+      abi: riseFactoryAbi,
+      functionName: "getTokenMarkets",
+      args: [offset, limit],
+    })) as unknown[];
+
+    let labelsPage: FactoryTokenLabel[] = [];
+    try {
+      labelsPage = await fetchTokenLabelsPage(publicClient, factory, offset, limit);
+    } catch {
+      // Older factories may not expose getTokenLabels; markets already include name/symbol.
+    }
 
     const pageTokens: TokenSummary[] = [];
     for (let i = 0; i < marketsPage.length; i++) {
